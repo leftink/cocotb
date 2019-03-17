@@ -620,3 +620,116 @@ const char* GpiImplInterface::get_name_c(void) {
 const string& GpiImplInterface::get_name_s(void) {
     return m_name;
 }
+
+GpiObjHdl* GpiImplInterface::create_and_initialise_gpi_obj(GpiObjHdl *parent, void *hdl, std::string &name, bool pseudo)
+{
+    GpiObjHdl *new_obj;
+    GpiObjHdlId id;
+
+    /* Create the GPI Object.
+     *
+     * Note: Only Generate Loops and Multi-Dimensional Arrays will generate pseudo handles.
+     *           Pseudo handles for generate loops will always be retrieved with a 'name' as the index would be the actual handle.
+     *           Pseudo handles for arrays will always be retrieved with an index when not all indices are available.
+     */
+    if (( pseudo && (new_obj = create_gpi_pseudo_obj(parent, hdl, GPI_GENARRAY)) == NULL) ||
+        (!pseudo && (new_obj = create_gpi_obj(parent, hdl)                     ) == NULL)) {
+        return NULL;
+    }
+
+    id.name      = name;
+    id.use_index = false;
+    id.index     = 0;
+    id.index_str = "";
+
+    if (new_obj->initialise(id)) {
+        delete new_obj;
+        new_obj = NULL;
+    }
+
+    return new_obj;
+}
+
+GpiObjHdl* GpiImplInterface::create_and_initialise_gpi_obj(GpiObjHdl *parent, void *hdl, int32_t index, bool pseudo)
+{
+    GpiObjHdl *new_obj;
+    GpiObjHdlId id;
+
+    /* Create the GPI Object.
+     *
+     * Note: Only Generate Loops and Multi-Dimensional Arrays will generate pseudo handles.
+     *           Pseudo handles for generate loops will always be retrieved with a 'name' as the index would be the actual handle.
+     *           Pseudo handles for arrays will always be retrieved with an index when not all indices are available.
+     */
+    if (( pseudo && (new_obj = create_gpi_pseudo_obj(parent, hdl, GPI_ARRAY)) == NULL) ||
+        (!pseudo && (new_obj = create_gpi_obj(parent, hdl)                  ) == NULL)) {
+        return NULL;
+    }
+
+    char buff[12]; // needs to be large enough to hold -2^31 to 2^31-1 in string form ('-'+10+'\0')
+
+    snprintf(buff, sizeof(buff), "%d", index);
+
+    id.name      = "";
+    id.use_index = true;
+    id.index     = index;
+    id.index_str = buff;
+
+    if (new_obj->initialise(id)) {
+        delete new_obj;
+        new_obj = NULL;
+    }
+
+    return new_obj;
+}
+
+std::string GpiImplInterface::get_handle_name(GpiObjHdl *hdl, int32_t index)
+{
+    GpiObjHdlId id;
+    GpiPseudoObjHdl idx(this, hdl, hdl->get_handle<void *>(), hdl->get_type());
+
+    char buff[12]; // needs to be large enough to hold -2^31 to 2^31-1 in string form ('-'+10+'\0')
+    snprintf(buff, sizeof(buff), "%d", index);
+
+    id.name      = "";
+    id.use_index = true;
+    id.index     = index;
+    id.index_str = buff;
+
+    idx.initialise(id);
+
+    return idx.get_name();
+}
+
+std::string GpiImplInterface::get_handle_fullname(GpiObjHdl *hdl, std::string &name)
+{
+    GpiObjHdlId id;
+    GpiPseudoObjHdl idx(this, hdl, hdl->get_handle<void *>(), hdl->get_type());
+
+    id.name      = name;
+    id.use_index = false;
+    id.index     = 0;
+    id.index_str = "";
+
+    idx.initialise(id);
+
+    return idx.get_fullname();
+}
+
+std::string GpiImplInterface::get_handle_fullname(GpiObjHdl *hdl, int32_t index)
+{
+    GpiObjHdlId id;
+    GpiPseudoObjHdl idx(this, hdl, hdl->get_handle<void *>(), hdl->get_type());
+
+    char buff[12]; // needs to be large enough to hold -2^31 to 2^31-1 in string form ('-'+10+'\0')
+    snprintf(buff, sizeof(buff), "%d", index);
+
+    id.name      = "";
+    id.index_str = buff;
+    id.index     = index;
+    id.use_index = true;
+
+    idx.initialise(id);
+
+    return idx.get_fullname();
+}

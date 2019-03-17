@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <algorithm>
 
 typedef enum gpi_cb_state {
     GPI_FREE = 0,
@@ -42,6 +43,13 @@ typedef enum gpi_cb_state {
     GPI_REPRIME = 3,
     GPI_DELETE = 4,
 } gpi_cb_state_e;
+
+typedef struct GpiObjHdlId_s {
+    std::string name;
+    bool use_index;
+    int32_t index;
+    std::string index_str;
+} GpiObjHdlId;
 
 class GpiCbHdl;
 class GpiImplInterface;
@@ -62,11 +70,8 @@ inline To sim_to_hdl(gpi_sim_hdl input)
 /* Base GPI class others are derived from */
 class GpiHdl {
 public:
-    GpiHdl(GpiImplInterface *impl) : m_impl(impl), m_obj_hdl(NULL) { }
-    GpiHdl(GpiImplInterface *impl, void *hdl) : m_impl(impl), m_obj_hdl(hdl) { }
+    GpiHdl(GpiImplInterface *impl, void *hdl=NULL) : m_impl(impl), m_obj_hdl(hdl) { }
     virtual ~GpiHdl() { }
-    virtual int initialise(std::string &name);                   // Post constructor init
-
 
     template<typename T> T get_handle(void) const {
         return static_cast<T>(m_obj_hdl);
@@ -93,42 +98,36 @@ protected:
 // that construct an object derived from GpiSignalObjHdl or GpiObjHdl
 class GpiObjHdl : public GpiHdl {
 public:
-    GpiObjHdl(GpiImplInterface *impl) : GpiHdl(impl, NULL),
-                                        m_num_elems(0),
-                                        m_indexable(false),
-                                        m_range_left(-1),
-                                        m_range_right(-1),
-                                        m_fullname("unknown"),
-                                        m_type(GPI_UNKNOWN),
-                                        m_const(false) { }
-    GpiObjHdl(GpiImplInterface *impl, void *hdl, gpi_objtype_t objtype) : GpiHdl(impl, hdl),
-                                                                          m_num_elems(0),
-                                                                          m_indexable(false),
-                                                                          m_range_left(-1),
-                                                                          m_range_right(-1),
-                                                                          m_fullname("unknown"),
-                                                                          m_type(objtype),
-                                                                          m_const(false) { }
-    GpiObjHdl(GpiImplInterface *impl, void *hdl, gpi_objtype_t objtype, bool is_const) :
-                                                                          GpiHdl(impl, hdl),
-                                                                          m_num_elems(0),
-                                                                          m_indexable(false),
-                                                                          m_range_left(-1),
-                                                                          m_range_right(-1),
-                                                                          m_fullname("unknown"),
-                                                                          m_type(objtype),
-                                                                          m_const(is_const) { }
+    GpiObjHdl(GpiImplInterface *impl,
+              GpiObjHdl *parent,
+              void *hdl=NULL,
+              gpi_objtype_t objtype=GPI_UNKNOWN,
+              bool is_const=false,
+              bool is_pseudo=false) :
+                   GpiHdl(impl, hdl),
+                   m_parent(parent),
+                   m_num_elems(0),
+                   m_indexable(false),
+                   m_range_left(-1),
+                   m_range_right(-1),
+                   m_pseudo(is_pseudo),
+                   m_type(objtype),
+                   m_const(is_const) { }
+
     virtual ~GpiObjHdl() { }
 
     virtual const char* get_name_str(void);
     virtual const char* get_fullname_str(void);
     virtual const char* get_type_str(void);
     gpi_objtype_t get_type(void) { return m_type; };
+    GpiObjHdl *get_parent(void) { return m_parent; };
     bool get_const(void) { return m_const; };
     int get_num_elems(void) {
-        LOG_DEBUG("%s has %d elements", m_name.c_str(), m_num_elems);
+        LOG_DEBUG("%s has %d elements", m_id.name.c_str(), m_num_elems);
         return m_num_elems;
     }
+
+    bool is_ascending(void)  { return m_range_left < m_range_right; }
     int get_range_left(void) { return m_range_left; }
     int get_range_right(void) { return m_range_right; }
     int get_indexable(void) { return m_indexable; }
@@ -136,25 +135,50 @@ public:
     const std::string & get_name(void);
     const std::string & get_fullname(void);
 
+    bool is_pseudo(void) { return m_pseudo; }
+
+    const std::string & get_id_name(void);
+    const std::string & get_id_index_str(void);
+    int32_t get_id_index(void);
+    bool use_index(void);
+
     virtual const char* get_definition_name() { return m_definition_name.c_str(); };
     virtual const char* get_definition_file() { return m_definition_file.c_str(); };
 
     bool is_native_impl(GpiImplInterface *impl);
-    virtual int initialise(std::string &name, std::string &full_name);
+    virtual int initialise(GpiObjHdlId &id);                   // Post constructor init
 
 protected:
-    int           m_num_elems;
-    bool          m_indexable;
-    int           m_range_left;
-    int           m_range_right;
-    std::string   m_name;
-    std::string   m_fullname;
+    GpiObjHdl     *m_parent;
+    GpiObjHdlId    m_id;
 
-    std::string   m_definition_name;
-    std::string   m_definition_file;
+    int            m_num_elems;
+    bool           m_indexable;
+    int            m_range_left;
+    int            m_range_right;
+    std::string    m_name;
+    std::string    m_fullname;
 
-    gpi_objtype_t m_type;
-    bool          m_const;
+    std::string    m_definition_name;
+    std::string    m_definition_file;
+
+    bool           m_pseudo;
+
+    gpi_objtype_t  m_type;
+    bool           m_const;
+};
+
+class GpiPseudoObjHdl : public GpiObjHdl {
+public:
+    GpiPseudoObjHdl(GpiImplInterface *impl, GpiObjHdl *parent, void *hdl, gpi_objtype_t objtype) : GpiObjHdl(impl,
+                                                                                                             parent,
+                                                                                                             hdl,
+                                                                                                             objtype,
+                                                                                                             parent->get_const(),
+                                                                                                             true) { }
+    virtual ~GpiPseudoObjHdl() { }
+
+    virtual int initialise(GpiObjHdlId &id);
 };
 
 
@@ -164,8 +188,8 @@ protected:
 // value of the signal (which doesn't apply to non signal items in the hierarchy
 class GpiSignalObjHdl : public GpiObjHdl {
 public:
-    GpiSignalObjHdl(GpiImplInterface *impl, void *hdl, gpi_objtype_t objtype, bool is_const) : 
-                                                         GpiObjHdl(impl, hdl, objtype, is_const),
+    GpiSignalObjHdl(GpiImplInterface *impl, GpiObjHdl *parent, void *hdl, gpi_objtype_t objtype, bool is_const) :
+                                                         GpiObjHdl(impl, parent, hdl, objtype, is_const),
                                                          m_length(0) { }
     virtual ~GpiSignalObjHdl() { }
     // Provide public access to the implementation (composition vs inheritance)
@@ -188,7 +212,7 @@ public:
 
 /* GPI Callback handle */
 // To set a callback it needs the signal to do this on,
-// vpiHandle/vhpiHandleT for instance. The 
+// vpiHandle/vhpiHandleT for instance. The
 class GpiCbHdl : public GpiHdl {
 public:
     GpiCbHdl(GpiImplInterface *impl) : GpiHdl(impl, NULL),
@@ -262,7 +286,16 @@ public:
     }
 
 protected:
+    bool pseudo_region_exists(std::string &name) {
+        if (std::find(m_pseudo_regions.begin(), m_pseudo_regions.end(), name) != m_pseudo_regions.end())
+            return true;
+        else
+            return false;
+    }
+
+protected:
     GpiObjHdl *m_parent;
+    std::vector<std::string> m_pseudo_regions;
 };
 
 template <class Ti, class Tm> class GpiIteratorMapping {
@@ -318,6 +351,15 @@ public:
     virtual GpiObjHdl* native_check_create(void *raw_hdl, GpiObjHdl *parent) = 0;
     virtual GpiObjHdl *get_root_handle(const char *name) = 0;
     virtual GpiIterator *iterate_handle(GpiObjHdl *obj_hdl, gpi_iterator_sel_t type) = 0;
+    virtual GpiObjHdl* create_and_initialise_gpi_obj(GpiObjHdl *parent, void *hdl, std::string &name, bool pseudo = false);
+    virtual GpiObjHdl* create_and_initialise_gpi_obj(GpiObjHdl *parent, void *hdl, int32_t index, bool pseudo = false);
+
+    virtual std::string get_handle_name(GpiObjHdl *hdl) = 0;
+    virtual std::string get_handle_fullname(GpiObjHdl *hdl) = 0;
+
+    virtual std::string get_handle_name(GpiObjHdl *hdl, int32_t index);
+    virtual std::string get_handle_fullname(GpiObjHdl *hdl, std::string &name);
+    virtual std::string get_handle_fullname(GpiObjHdl *hdl, int32_t index);
 
     /* Callback related, these may (will) return the same handle */
     virtual GpiCbHdl *register_timed_callback(uint64_t time_ps) = 0;
@@ -328,6 +370,10 @@ public:
 
     /* Method to provide strings from operation types */
     virtual const char * reason_to_string(int reason) = 0;
+
+protected:
+    virtual GpiObjHdl* create_gpi_obj(GpiObjHdl *parent, void *hdl) = 0;
+    virtual GpiObjHdl* create_gpi_pseudo_obj(GpiObjHdl *parent, void *hdl, gpi_objtype_t objtype) = 0;
 
 private:
     std::string m_name;

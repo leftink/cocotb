@@ -25,8 +25,8 @@
 * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ******************************************************************************/
 
-#ifndef COCOTB_VHPI_IMPL_H_ 
-#define COCOTB_VHPI_IMPL_H_ 
+#ifndef COCOTB_VHPI_IMPL_H_
+#define COCOTB_VHPI_IMPL_H_
 
 #include "../gpi/gpi_priv.h"
 #include <vhpi_user.h>
@@ -84,7 +84,7 @@ static inline int __check_vhpi_error(const char *file, const char *func, long li
 
 class VhpiCbHdl : public virtual GpiCbHdl {
 public:
-    VhpiCbHdl(GpiImplInterface *impl); 
+    VhpiCbHdl(GpiImplInterface *impl);
     virtual ~VhpiCbHdl() { }
 
     virtual int arm_callback(void);
@@ -158,32 +158,55 @@ public:
     virtual ~VhpiReadwriteCbHdl() { }
 };
 
+class VhpiPseudoGenArrayObjHdl : public GpiPseudoObjHdl {
+public:
+    VhpiPseudoGenArrayObjHdl(GpiImplInterface *impl,
+                             GpiObjHdl *parent,
+                             void *hdl) : GpiPseudoObjHdl(impl, parent, hdl, GPI_GENARRAY) { }
+    virtual ~VhpiPseudoGenArrayObjHdl() { }
+
+    int initialise(GpiObjHdlId &id);
+};
+
+class VhpiPseudoArrayObjHdl : public GpiPseudoObjHdl {
+public:
+    VhpiPseudoArrayObjHdl(GpiImplInterface *impl,
+                          GpiObjHdl *parent,
+                          void *hdl) : GpiPseudoObjHdl(impl, parent, hdl, GPI_ARRAY) { }
+    virtual ~VhpiPseudoArrayObjHdl() { }
+
+    int initialise(GpiObjHdlId &id);
+};
+
 class VhpiArrayObjHdl : public GpiObjHdl {
 public:
     VhpiArrayObjHdl(GpiImplInterface *impl,
+                    GpiObjHdl *parent,
                     vhpiHandleT hdl,
-                    gpi_objtype_t objtype) : GpiObjHdl(impl, hdl, objtype) { }
+                    gpi_objtype_t objtype) : GpiObjHdl(impl, parent, hdl, objtype) { }
     virtual ~VhpiArrayObjHdl() { }
 
-    int initialise(std::string &name, std::string &fq_name);
+    int initialise(GpiObjHdlId &id);
 };
 
 class VhpiObjHdl : public GpiObjHdl {
 public:
     VhpiObjHdl(GpiImplInterface *impl,
+               GpiObjHdl *parent,
                vhpiHandleT hdl,
-               gpi_objtype_t objtype) : GpiObjHdl(impl, hdl, objtype) { }
+               gpi_objtype_t objtype) : GpiObjHdl(impl, parent, hdl, objtype) { }
     virtual ~VhpiObjHdl() { }
 
-    int initialise(std::string &name, std::string &fq_name);
+    int initialise(GpiObjHdlId &id);
 };
 
 class VhpiSignalObjHdl : public GpiSignalObjHdl {
 public:
     VhpiSignalObjHdl(GpiImplInterface *impl,
+                     GpiObjHdl *parent,
                      vhpiHandleT hdl,
                      gpi_objtype_t objtype,
-                     bool is_const) : GpiSignalObjHdl(impl, hdl, objtype, is_const),
+                     bool is_const) : GpiSignalObjHdl(impl, parent, hdl, objtype, is_const),
                                       m_rising_cb(impl, this, GPI_RISING),
                                       m_falling_cb(impl, this, GPI_FALLING),
                                       m_either_cb(impl, this, GPI_FALLING | GPI_RISING) { }
@@ -201,7 +224,7 @@ public:
 
     /* Value change callback accessor */
     virtual GpiCbHdl *value_change_cb(unsigned int edge);
-    virtual int initialise(std::string &name, std::string &fq_name);
+    virtual int initialise(GpiObjHdlId &id);
 
 protected:
     const vhpiEnumT chr2vhpi(const char value);
@@ -215,16 +238,17 @@ protected:
 class VhpiLogicSignalObjHdl : public VhpiSignalObjHdl {
 public:
     VhpiLogicSignalObjHdl(GpiImplInterface *impl,
-                         vhpiHandleT hdl,
-                         gpi_objtype_t objtype,
-                         bool is_const) : VhpiSignalObjHdl(impl, hdl, objtype, is_const) { }
+                          GpiObjHdl *parent,
+                          vhpiHandleT hdl,
+                          gpi_objtype_t objtype,
+                          bool is_const) : VhpiSignalObjHdl(impl, parent, hdl, objtype, is_const) { }
 
     virtual ~VhpiLogicSignalObjHdl() { }
 
     int set_signal_value(const long value);
     int set_signal_value(std::string &value);
 
-    int initialise(std::string &name, std::string &fq_name);
+    int initialise(GpiObjHdlId &id);
 };
 
 class VhpiIterator : public GpiIterator {
@@ -272,9 +296,17 @@ public:
     const char * reason_to_string(int reason);
     const char * format_to_string(int format);
 
-    GpiObjHdl *create_gpi_obj_from_handle(vhpiHandleT new_hdl,
-                                          std::string &name,
-                                          std::string &fq_name);
+    std::string get_handle_name(GpiObjHdl *hdl);
+    std::string get_handle_fullname(GpiObjHdl *hdl);
+
+protected:
+    GpiObjHdl* create_gpi_obj(GpiObjHdl *parent, void *hdl);
+    GpiObjHdl* create_gpi_pseudo_obj(GpiObjHdl *parent, void *hdl, gpi_objtype_t objtype);
+
+private:
+    size_t get_handle_name_len(GpiObjHdl *hdl, bool full);
+    size_t get_handle_full_index_str_len(GpiObjHdl *hdl);
+    void insert_handle_full_index_str(GpiObjHdl *hdl, char *buff, size_t len);
 
 private:
     VhpiReadwriteCbHdl m_read_write;
